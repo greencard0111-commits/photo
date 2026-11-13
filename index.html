@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Futbolchi Profil Rasmi</title>
+    <!-- AI model uchun kutubxonalar -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #111; color: white; margin: 0; padding: 20px; }
+        
+        /* Parol ekrani dizayni */
+        #loginScreen { margin-top: 100px; }
+        #passwordInput { padding: 12px; font-size: 18px; border-radius: 8px; border: none; text-align: center; width: 80%; max-width: 300px; margin-bottom: 15px; }
+        #errorMsg { color: #ff5252; font-size: 16px; display: none; margin-top: 10px; }
+        
+        /* Asosiy dastur yashiringan */
+        #appContent { display: none; }
+        
+        video, canvas { 
+            width: 100%; max-width: 500px; border-radius: 10px; margin-bottom: 15px; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+        }
+        canvas {
+            background-color: #fff;
+            background-image: 
+                linear-gradient(45deg, #ccc 25%, transparent 25%), 
+                linear-gradient(-45deg, #ccc 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #ccc 75%), 
+                linear-gradient(-45deg, transparent 75%, #ccc 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            display: none;
+        }
+        .btn { 
+            background: #4CAF50; color: white; padding: 15px 24px; 
+            border: none; border-radius: 8px; font-size: 18px; 
+            margin: 5px; cursor: pointer; font-weight: bold; width: 100%; max-width: 300px;
+        }
+        .btn:active { background: #45a049; }
+        .btn-blue { background: #008CBA; }
+        .btn-blue:active { background: #007399; }
+        .btn-gray { background: #555; }
+        #controls { display: none; }
+        #loading { display: none; color: #ffeb3b; font-size: 18px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    
+    <!-- Parol Ekrani -->
+    <div id="loginScreen">
+        <h2>🔒 Dasturga kirish</h2>
+        <input type="password" id="passwordInput" placeholder="Parolni kiriting">
+        <br>
+        <button class="btn" id="loginBtn">Kirish</button>
+        <p id="errorMsg">Parol xato! Qaytadan urinib ko'ring.</p>
+    </div>
+
+    <!-- Asosiy Dastur -->
+    <div id="appContent">
+        <h2>📸 Futbolchi Rasmi (Oflayn)</h2>
+        <div id="loading">Sun'iy intellekt fonni qirqmoqda... Kutib turing!</div>
+        
+        <video id="videoElement" autoplay playsinline></video>
+        <canvas id="canvasElement"></canvas>
+
+        <div>
+            <button class="btn" id="captureBtn">📸 Rasmga olish</button>
+            <div id="controls">
+                <button class="btn btn-gray" id="retakeBtn">🔄 Qaytadan</button>
+                <button class="btn btn-blue" id="saveBtn">💾 Saqlash (PNG)</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- PAROL SOZLAMALARI ---
+        const maxfiyParol = "1707"; // <--- Parolni shu yerdan o'zgartirasiz
+        
+        const loginBtn = document.getElementById('loginBtn');
+        const passwordInput = document.getElementById('passwordInput');
+        const errorMsg = document.getElementById('errorMsg');
+        const loginScreen = document.getElementById('loginScreen');
+        const appContent = document.getElementById('appContent');
+
+        // Kirish tugmasi bosilganda parolni tekshirish
+        loginBtn.addEventListener('click', () => {
+            if(passwordInput.value === maxfiyParol) {
+                loginScreen.style.display = 'none'; // Parol oynasini yashirish
+                appContent.style.display = 'block'; // Dasturni ko'rsatish
+                startCamera(); // Faqat parol to'g'ri bo'lsagina kamera yonadi
+            } else {
+                errorMsg.style.display = 'block';
+                passwordInput.value = ""; // Xato bo'lsa oynani tozalash
+            }
+        });
+
+        // "Enter" tugmasi bosilganda ham kirish
+        passwordInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                loginBtn.click();
+            }
+        });
+
+        // --- ASOSIY DASTUR MANTIG'I ---
+        const videoElement = document.getElementById('videoElement');
+        const canvasElement = document.getElementById('canvasElement');
+        const canvasCtx = canvasElement.getContext('2d');
+        const captureBtn = document.getElementById('captureBtn');
+        const retakeBtn = document.getElementById('retakeBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const controls = document.getElementById('controls');
+        const loading = document.getElementById('loading');
+
+        let isProcessing = false;
+
+        const selfieSegmentation = new SelfieSegmentation({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`;
+        }});
+
+        selfieSegmentation.setOptions({
+            modelSelection: 0,
+        });
+
+        selfieSegmentation.onResults((results) => {
+            canvasElement.width = results.image.width;
+            canvasElement.height = results.image.height;
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.segmentationMask, 0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.globalCompositeOperation = 'source-in';
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.restore();
+
+            loading.style.display = 'none';
+            videoElement.style.display = 'none';
+            canvasElement.style.display = 'inline-block';
+            controls.style.display = 'block';
+            isProcessing = false;
+        });
+
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment', width: 1280, height: 720 } 
+                });
+                videoElement.srcObject = stream;
+            } catch (err) {
+                alert("Kameraga ruxsat berilmadi yoki xato chiqdi: " + err.message);
+            }
+        }
+
+        captureBtn.addEventListener('click', async () => {
+            if(isProcessing) return;
+            isProcessing = true;
+            captureBtn.style.display = 'none';
+            loading.style.display = 'block';
+
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = videoElement.videoWidth;
+            tempCanvas.height = videoElement.videoHeight;
+            tempCanvas.getContext('2d').drawImage(videoElement, 0, 0);
+
+            await selfieSegmentation.send({image: tempCanvas});
+        });
+
+        retakeBtn.addEventListener('click', () => {
+            videoElement.style.display = 'inline-block';
+            canvasElement.style.display = 'none';
+            captureBtn.style.display = 'inline-block';
+            controls.style.display = 'none';
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        });
+
+        saveBtn.addEventListener('click', () => {
+            let fileName = prompt("Futbolchining ismini kiriting (shifrsiz):", "futbolchi_ism");
+            if (!fileName) return;
+
+            const dataURL = canvasElement.toDataURL('image/png');
+            const link = document.createElement('a');
+            
+            link.download = fileName.replace(/\s+/g, '_') + '.png';
+            link.href = dataURL;
+            link.click();
+        });
+    </script>
+</body>
+</html>
